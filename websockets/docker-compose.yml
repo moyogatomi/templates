@@ -1,0 +1,18 @@
+version: '3.7'
+services:
+  websockets-fe:
+    container_name: websockets-fe
+    build:
+      context:  fe/frontend_socket/
+      target: 'develop-stage'
+    ports:
+    - '80:8080'
+    command: /bin/sh -c "yarn && quasar dev"
+
+
+  websockets-api:
+    container_name: websockets-api
+    build:
+      context:  api/
+    ports:
+    - '8000:8000'
