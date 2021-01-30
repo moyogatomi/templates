@@ -6,8 +6,7 @@
 Demo template for websockets.  
 Websocket loop consumes from rabbitmq queue. Consumer listens for topics containing user_id ('default').  
 
-Not implemented, but if websockets registers also browser tab_id, it could be possible to have multiple websockets connections in different tabs.  
-At this moment multiple websockets connections will share a queue and therefore will not duplicate logs.  
+Websockets registers also browser tab_id (its a mock and generated as a random number on connection). This results in having multiple tabs with websockets receiving events from multiple queues and therefore push into each open browser tab same logs.
 
 ##### Architecture
 Most parts async  

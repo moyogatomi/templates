@@ -101,9 +101,16 @@ async def get():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
+    user_id = "default"
 
-    queue_name = f"task_events_{random.randint(0,100)}"
-    routing_key = "default.task"
+    # fake tab_id
+    tab_id = random.randint(0, 10000)
+
+    queue_user = f"{user_id}-{tab_id}"
+    queue_name = f"events_{queue_user}"
+
+    # For more complex behaviour, we can remove .task and receive all events and sort them here
+    routing_key = f"{user_id}.task"
 
     async def on_message(message: IncomingMessage):
         logger.info("received message")
