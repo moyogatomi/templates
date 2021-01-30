@@ -49,11 +49,11 @@ class ConnectionManager:
     def disconnect(self, websocket: WebSocket):
         self.active_connections.remove(websocket)
 
-    async def send_personal_message(self, message: dict, websocket: WebSocket):
-        await websocket.send_json(message)
-
     async def send_message(self, message: dict, websocket: WebSocket):
-        websocket.send_json(message)
+        try:
+            await websocket.send_json(message)
+        except:
+            logger.error("Failed to send message")
 
     async def broadcast(self, message: str):
         for connection in self.active_connections:
@@ -78,8 +78,8 @@ async def get():
         message_timestamp=timestamp,
     )
 
-    connection = await get_database()
-    channel = await connection.channel()
+    channel = await get_database()
+    # channel = await connection.channel()
     exchange = await channel.declare_exchange("topic_logs", ExchangeType.TOPIC)
     message_body = json.dumps(
         dict(
@@ -107,11 +107,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
     async def on_message(message: IncomingMessage):
         logger.info("received message")
-        await manager.send_personal_message(json.loads(message.body), websocket)
+        await manager.send_message(json.loads(message.body), websocket)
 
     try:
-        connection = await get_database()
-        channel = await connection.channel()
+        channel = await get_database()
+        # channel = await connection.channel()
         exchange = await channel.declare_exchange(
             "topic_logs",
             ExchangeType.TOPIC,
@@ -122,19 +122,24 @@ async def websocket_endpoint(websocket: WebSocket):
 
         # Binding the queue to the exchange
         await queue.bind(exchange, routing_key)
-        await queue.consume(on_message)
+        consumer_tag = await queue.consume(on_message, no_ack=True)
 
         while True:
 
             data = await websocket.receive_text()
-            x = await manager.send_personal_message(data, websocket)
+            x = await manager.send_message(data, websocket)
 
-    except WebSocketDisconnect:
+    except Exception as e:
         logger.info("Websocket Disconnect")
+        logger.error(str(e))
         manager.disconnect(websocket)
-        # await manager.broadcast(f"Client # left the chat")
+
+    await queue.cancel(consumer_tag)
     await queue.unbind(exchange, routing_key)
-    await channel.close()
+
+    # No channel disconnection as there is 1 channel and 1 connection per application (asyncio)
+    ## await channel.close()
+
     logger.info("Ending websocket")
 
 
