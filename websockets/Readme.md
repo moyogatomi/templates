@@ -1,4 +1,7 @@
 ### Websockets(Fastapi) + Frontend(Quasar) + Background tasks(Dramatiq)
+
+![Alt Text](https://github.com/moyogatomi/templates/blob/main/websockets/resources/intro.gif)
+
 ##### Description
 Demo template for websockets.
 Websocket loop consumes from rabbitmq queue. Consumer listens for topics containing user_id ('default')
