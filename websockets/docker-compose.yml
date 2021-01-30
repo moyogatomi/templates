@@ -6,7 +6,7 @@ services:
       context:  fe/frontend_socket/
       target: 'develop-stage'
     ports:
-    - '80:8080'
+      - '80:8080'
     command: /bin/sh -c "yarn && quasar dev"
 
 
@@ -15,4 +15,32 @@ services:
     build:
       context:  api/
     ports:
-    - '8000:8000'
+      - '8000:8000'
+
+  worker:
+    container_name: worker
+    build:
+      context: ./worker
+    command: ['dramatiq','worker','-p','1','-t','3','-v']
+
+
+  rabbit:
+    image: "rabbitmq:3-management"
+    container_name: "rabbit"
+    environment:
+      #RABBITMQ_ERLANG_COOKIE: "SWQOKODSQALRPCLNMEQG"
+      RABBITMQ_DEFAULT_USER: "rabbitmq"
+      RABBITMQ_DEFAULT_PASS: "rabbitmq"
+      RABBITMQ_DEFAULT_VHOST: "/"
+    ports:
+      - "15673:15672"
+      - "5673:5672"
+
+  redis_backend:
+    image: redis:5.0
+    container_name: redis_backend
+    restart: always
+
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass password_test

@@ -1,7 +1,6 @@
-fastapi
-uvicorn
-uvicorn[standard]
-pika
 dramatiq[rabbitmq, watch]
 dramatiq[redis, watch]
-aio-pika
+fastapi[all]
+redis
+gunicorn>=20.0.4
+pika

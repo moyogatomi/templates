@@ -1,6 +1,6 @@
 FROM python:3.7-slim-stretch
 
-ENV APP api
+ENV APP dramaworker
 ENV APPDIR /app/$APP
 ENV PYTHONPATH=$APPDIR:$APPDIR/
 WORKDIR $APPDIR
@@ -15,7 +15,7 @@ RUN \
   apt-get -y autoremove && \
   apt-get clean
 
-COPY requirements.txt requirements.txt
+COPY ./requirements.txt requirements.txt
 
 RUN \
   pip install --upgrade pip && \
@@ -24,8 +24,7 @@ RUN \
   apt-get -y autoremove && \
   apt-get clean
 
+RUN useradd worker
+
 COPY . .
-
-RUN useradd test
-
-CMD ["uvicorn", "main:app","--host","0.0.0.0","--log-level","info"]
+COPY ./dramatiq_conf.py dramatiq_conf.py

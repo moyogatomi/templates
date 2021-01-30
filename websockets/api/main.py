@@ -1,46 +1,41 @@
-from typing import List
-from typing import Optional
+import asyncio
+import json
+import logging
+import random
 import time
+import uuid
+from typing import List, Optional
+
+from aio_pika import ExchangeType, IncomingMessage, Message, connect
 from fastapi import (
     Cookie,
     Depends,
     FastAPI,
     Query,
     WebSocket,
-    status,
     WebSocketDisconnect,
+    status,
 )
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-import json
-import random
-import asyncio
 
+from dramatiq_conf import dramatiq, rabbitmq_broker
+from pikclient import close_rabbit_connection, connect_to_rabbit, get_database
+
+logger = logging.getLogger("uvicorn.info")
 app = FastAPI()
+origins = [
+    "http://localhost:8080",
+    "http://localhost:80",
+]
 
-
-class FakeTask:
-    def __init__(self, num_tasks):
-        self.num_tasks = num_tasks
-        self.tasks = {i: {"progress": 0, "state": "started"} for i in range(num_tasks)}
-
-    def __call__(self):
-        key = random.randint(0, self.num_tasks - 1)
-        if self.tasks[key]["progress"] == 0:
-            self.tasks[key]["progress"] += 1
-            return {(key): {"progress": 0, "state": "started"}}
-        else:
-            if self.tasks[key]["progress"] > 0 and self.tasks[key]["progress"] <= 30:
-                self.tasks[key]["state"] = "in progress"
-            elif self.tasks[key]["progress"] > 30 and self.tasks[key]["progress"] < 99:
-                self.tasks[key]["state"] = "computing"
-            else:
-                self.tasks[key]["state"] = "done"
-                self.tasks[key]["progress"] = 99
-        self.tasks[key]["progress"] += 1
-        return {(key): self.tasks[key]}
-
-
-fake = FakeTask(10)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class ConnectionManager:
@@ -68,28 +63,80 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-@app.get("/")
+@app.get("/create_task")
 async def get():
-    return 200
+
+    message_identifier = str(uuid.uuid4())
+    timestamp = int(time.time() * 1000)
+    msg = dramatiq.Message(
+        queue_name="worker_queue",
+        actor_name="task",
+        args=({"task_id": message_identifier, "user_id": "default"},),
+        kwargs={},
+        options={},
+        message_id=message_identifier,
+        message_timestamp=timestamp,
+    )
+
+    connection = await get_database()
+    channel = await connection.channel()
+    exchange = await channel.declare_exchange("topic_logs", ExchangeType.TOPIC)
+    message_body = json.dumps(
+        dict(
+            state="queued",
+            progress=0,
+            user_id="default",
+            task_id=message_identifier,
+            message_type="task",
+        )
+    ).encode()
+    message = Message(message_body)
+    await exchange.publish(
+        message,
+        routing_key="default.task",
+    )
+    return rabbitmq_broker.enqueue(msg)  # .get_result(block=False, timeout=10000)
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    print("Entering")
     await manager.connect(websocket)
-    print("got conn")
+
+    queue_name = f"task_events_{random.randint(0,100)}"
+    routing_key = "default.task"
+
+    async def on_message(message: IncomingMessage):
+        logger.info("received message")
+        await manager.send_personal_message(json.loads(message.body), websocket)
+
     try:
-        # data = await websocket.receive_text()
+        connection = await get_database()
+        channel = await connection.channel()
+        exchange = await channel.declare_exchange(
+            "topic_logs",
+            ExchangeType.TOPIC,
+        )
+
+        # Declaring queue
+        queue = await channel.declare_queue(queue_name, auto_delete=True)
+
+        # Binding the queue to the exchange
+        await queue.bind(exchange, routing_key)
+        await queue.consume(on_message)
+
         while True:
-            # data = await websocket.receive_text()
-            print("sendinf...")
-            data = fake()
+
+            data = await websocket.receive_text()
             x = await manager.send_personal_message(data, websocket)
-            print("JUST SEND", data)
-            # await manager.broadcast(f"Client # says: {data}")
-            # print("broadcast")
-            await asyncio.sleep(0.05)
 
     except WebSocketDisconnect:
+        logger.info("Websocket Disconnect")
         manager.disconnect(websocket)
         # await manager.broadcast(f"Client # left the chat")
+    await queue.unbind(exchange, routing_key)
+    await channel.close()
+    logger.info("Ending websocket")
+
+
+app.add_event_handler("startup", connect_to_rabbit)
+app.add_event_handler("shutdown", close_rabbit_connection)
